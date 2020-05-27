@@ -14,7 +14,8 @@ KEY_CODES = {
   72: 'h',
   77: 'm',
   80: 'p'
-}
+};
+
 
 KEY_STATUS = { keyDown:false };
 for (code in KEY_CODES) {
@@ -60,7 +61,7 @@ Matrix = function (rows, columns) {
         k++;
       }
     }
-  }
+  };
 
   this.multiply = function () {
     var vector = new Array(rows);
@@ -109,6 +110,7 @@ Sprite = function () {
   this.currentNode = null;
   this.nextSprite  = null;
 
+  this.aiPreMove = null;
   this.preMove  = null;
   this.postMove = null;
 
@@ -171,9 +173,14 @@ Sprite = function () {
     if (!this.visible) return;
     this.transPoints = null; // clear cached points
 
-    if ($.isFunction(this.preMove)) {
-      this.preMove(delta);
+    if($.isFunction(this.aiPreMove)) {
+      this.aiPreMove(delta);
     }
+
+    // if ($.isFunction(this.preMove)) {
+    //   //this.preMove(delta);
+    //   //this.aiPreMove(delta);
+    // }
 
     this.vel.x += this.acc.x * delta;
     this.vel.y += this.acc.y * delta;
@@ -301,8 +308,8 @@ Sprite = function () {
           oddNodes = !oddNodes;
         }
       }
-      j += 2
-      if (j == points.length) j = 0;
+      j += 2;
+      if (j === points.length) j = 0;
     }
     return oddNodes;
   };
@@ -383,20 +390,95 @@ Ship = function () {
 
   this.collidesWith = ["asteroid", "bigalien", "alienbullet"];
 
+  this.keyLeftEffect = function(delta) {
+    this.vel.rot = -6;
+  };
+
+  this.keyRightEffect = function(delta) {
+    this.vel.rot = 6;
+  };
+
+  this.keyUpEffect = function(delta) {
+    var rad = ((this.rot-90) * Math.PI)/180; // the current angle of the spacecraft
+    this.acc.x = 0.5 * Math.cos(rad); // accelerate in that angle
+    this.acc.y = 0.5 * Math.sin(rad);
+    this.children.exhaust.visible = Math.random() > 0.1;
+  };
+
+  this.keySpaceEffect = function(delta) {
+    if (this.bulletCounter > 0) {
+      this.bulletCounter -= delta * 2;
+    }
+    if (this.bulletCounter <= 0) {
+      this.bulletCounter = 100;
+      for (var i = 0; i < this.bullets.length; i++) {
+        if (!this.bullets[i].visible) {
+          SFX.laser();
+          var bullet = this.bullets[i];
+          var rad = ((this.rot-90) * Math.PI)/180;
+          var vectorx = Math.cos(rad);
+          var vectory = Math.sin(rad);
+          // move to the nose of the ship
+          bullet.x = this.x + vectorx * 4;
+          bullet.y = this.y + vectory * 4;
+          bullet.vel.x = 6 * vectorx + this.vel.x;
+          bullet.vel.y = 6 * vectory + this.vel.y;
+          bullet.visible = true;
+          break;
+        }
+      }
+    }
+  };
+
+  this.randIntGen = function(n) {
+    return Math.floor(Math.random() * n);
+  };
+
+  this.aiSelect = function(n, delta) {
+    if (n === 0) {
+      this.keyLeftEffect(delta);
+    } else if (n === 1) {
+      this.keyRightEffect(delta);
+    } else if (n < 5) {
+      this.keyUpEffect(delta);
+    } else if (n < 7) {
+      this.keySpaceEffect(delta);
+      this.keyRightEffect(delta);
+      this.keyRightEffect(delta);
+    } else {
+      for (var i = 0; i < 20; i++) {
+        this.keySpaceEffect(delta);
+      }
+
+      //this.keyLeftEffect(delta);
+      //this.keyLeftEffect(delta);
+    }
+  };
+
+  this.aiPreMove = function(delta) {
+    for (var i = 0; i < 2; i++) {
+      let k = this.randIntGen(10);
+      this.aiSelect(k, delta);
+      this.keySpaceEffect(delta);
+    }
+    // limit the ship's speed
+    if (Math.sqrt(this.vel.x * this.vel.x + this.vel.y * this.vel.y) > 8) {
+      this.vel.x *= 0.95;
+      this.vel.y *= 0.95;
+    }
+  };
+
   this.preMove = function (delta) {
     if (KEY_STATUS.left) {
-      this.vel.rot = -6;
+      this.keyLeftEffect(delta);
     } else if (KEY_STATUS.right) {
-      this.vel.rot = 6;
+      this.keyRightEffect(delta);
     } else {
       this.vel.rot = 0;
     }
 
     if (KEY_STATUS.up) {
-      var rad = ((this.rot-90) * Math.PI)/180;
-      this.acc.x = 0.5 * Math.cos(rad);
-      this.acc.y = 0.5 * Math.sin(rad);
-      this.children.exhaust.visible = Math.random() > 0.1;
+      this.keyUpEffect(delta);
     } else {
       this.acc.x = 0;
       this.acc.y = 0;
@@ -407,25 +489,7 @@ Ship = function () {
       this.bulletCounter -= delta;
     }
     if (KEY_STATUS.space) {
-      if (this.bulletCounter <= 0) {
-        this.bulletCounter = 10;
-        for (var i = 0; i < this.bullets.length; i++) {
-          if (!this.bullets[i].visible) {
-            SFX.laser();
-            var bullet = this.bullets[i];
-            var rad = ((this.rot-90) * Math.PI)/180;
-            var vectorx = Math.cos(rad);
-            var vectory = Math.sin(rad);
-            // move to the nose of the ship
-            bullet.x = this.x + vectorx * 4;
-            bullet.y = this.y + vectory * 4;
-            bullet.vel.x = 6 * vectorx + this.vel.x;
-            bullet.vel.y = 6 * vectory + this.vel.y;
-            bullet.visible = true;
-            break;
-          }
-        }
-      }
+      this.keySpaceEffect(delta);
     }
 
     // limit the ship's speed
@@ -1077,7 +1141,7 @@ $(function () {
   sprites.push(ship);
 
   ship.bullets = [];
-  for (var i = 0; i < 10; i++) {
+  for (var i = 0; i < 100; i++) {
     var bull = new Bullet();
     ship.bullets.push(bull);
     sprites.push(bull);
@@ -1194,24 +1258,24 @@ $(function () {
 
   mainLoop();
 
-  $(window).keydown(function (e) {
-    switch (KEY_CODES[e.keyCode]) {
-      case 'f': // show framerate
-        showFramerate = !showFramerate;
-        break;
-      case 'p': // pause
-        paused = !paused;
-        if (!paused) {
-          // start up again
-          lastFrame = Date.now();
-          mainLoop();
-        }
-        break;
-      case 'm': // mute
-        SFX.muted = !SFX.muted;
-        break;
-    }
-  });
+  // $(window).keydown(function (e) {
+  //   switch (KEY_CODES[e.keyCode]) {
+  //     case 'f': // show framerate
+  //       showFramerate = !showFramerate;
+  //       break;
+  //     case 'p': // pause
+  //       paused = !paused;
+  //       if (!paused) {
+  //         // start up again
+  //         lastFrame = Date.now();
+  //         mainLoop();
+  //       }
+  //       break;
+  //     case 'm': // mute
+  //       SFX.muted = !SFX.muted;
+  //       break;
+  //   }
+  // });
 });
 
 // vim: fdl=0
